@@ -147,6 +147,7 @@
       <label>Name</label><input id="gName" placeholder="">
       <label>Email</label><input id="gEmail" placeholder="">
       <label>Contact number</label><input id="gContact" placeholder="">
+      <label>Employee ID</label><input id="gEmpId" placeholder="">
       <label>Country</label><input id="gCountry" placeholder="">
       <label>Dietary preference</label>
       <select class="field" id="gDietary">
@@ -376,10 +377,10 @@
           <div class="stat-card"><div class="l">Coorg Boarding</div><div class="n" id="transportCoorg">0 / 0</div></div>
         </div>
         <h3 style="font-size:12.5px; color:var(--muted); margin:10px 0 6px;">Bus-wise boarding</h3>
+        <p class="page-sub" style="margin:0 0 8px;">Tap a bus to see who's boarded by name. Use each bus's Reset only if needed — it affects that bus alone.</p>
         <div id="busSummaryList"><div class="loading">Loading…</div></div>
         <div class="grid2" style="margin-top:12px;">
           <button class="btn secondary" onclick="resetAirportBoarding()">Reset Airport Boarding</button>
-          <button class="btn secondary" onclick="resetCoorgBoarding()">Reset Coorg Boarding</button>
         </div>
       </div>
 
@@ -481,6 +482,7 @@ const ADMIN_PIN = "2026"; // change this before sending the link out
 
 let currentPersona = null;   // always the attendee's own identity — never overwritten to "Admin"
 let currentEmail = null;
+let currentEmpId = null;   // NEW — the actual identity key now; email/name are fallbacks for pre-fix data only
 let isOrganizer = false;     // additive flag; does not replace currentPersona
 let organizerViewActive = false;
 
@@ -531,7 +533,8 @@ async function sset(key,val){
 }
 async function sendPushToAll(message){
   try{
-    await apiPost({ action:"sendPush", message, sentBy: currentPersona || 'Organizer' });
+    const res = await apiPost({ action:"sendPush", message, sentBy: currentPersona || 'Organizer', adminSecret: ADMIN_PIN });
+    if(res && res.error){ toast('Push failed: ' + res.error); }
   }catch(e){ console.error('push failed', e); }
 }
 
@@ -540,7 +543,14 @@ function toast(msg){
   t.textContent = msg; t.classList.add('show');
   setTimeout(()=>t.classList.remove('show'), 1800);
 }
-function k(prefix){ return prefix+":"+currentPersona; }
+// Identity key for all personal data (registration/travel/hotel/pollvotes).
+// Prefers Employee ID (guaranteed unique, immune to two attendees sharing a
+// name) — falls back to email, then name, only for data written before this
+// fix existed.
+function k(prefix){
+  const id = (currentEmpId || currentEmail || currentPersona || '').toString().trim().toLowerCase();
+  return prefix+":"+id;
+}
 function escapeHtml(s){ return (s||'').toString().replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 
 /* ================= CACHE LOADING ================= */
@@ -605,6 +615,7 @@ function boot(){
     const a = JSON.parse(savedAttendee);
     currentPersona = a.name;
     currentEmail = a.email || null;
+    currentEmpId = a.empId || null;
     enterApp();
     if(isOrganizer){
       if(typeof OneSignalDeferred !== 'undefined'){
@@ -690,24 +701,27 @@ async function completeRegistration(){
   const reg = {
     name: document.getElementById('gName').value.trim(),
     email: document.getElementById('gEmail').value.trim(),
+    empId: document.getElementById('gEmpId').value.trim(),
     contact: document.getElementById('gContact').value.trim(),
     country: document.getElementById('gCountry').value.trim(),
     dietary: document.getElementById('gDietary').value
   };
-  if(!reg.name || !reg.email){
-    document.getElementById('gateError').textContent = 'Name and email are required.';
+  if(!reg.name || !reg.email || !reg.empId){
+    document.getElementById('gateError').textContent = 'Name, email, and Employee ID are required.';
     return;
   }
   currentPersona = reg.name;
   currentEmail = reg.email;
+  currentEmpId = reg.empId;
   await sset(k('registration'), reg);
   const list = (await sget('attendees_list')) || [];
-  const alreadyIn = list.some(e => (typeof e === 'string' ? e : e.name) === reg.name);
+  // Dedupe by Employee ID now, not name — two attendees can share a name, never an Emp ID.
+  const alreadyIn = list.some(e => (typeof e === 'string' ? false : e.empId) === reg.empId);
   if(!alreadyIn){
-    list.push({ name: reg.name, email: reg.email, registeredAt: new Date().toISOString() });
+    list.push({ name: reg.name, email: reg.email, empId: reg.empId, registeredAt: new Date().toISOString() });
     await sset('attendees_list', list);
   }
-  localStorage.setItem('flit_attendee', JSON.stringify({name:reg.name, email:reg.email}));
+  localStorage.setItem('flit_attendee', JSON.stringify({name:reg.name, email:reg.email, empId:reg.empId}));
   enterApp();
   await loadCache();
   showScreen('home');
@@ -1018,9 +1032,12 @@ document.getElementById('travelSubnav').addEventListener('click', e=>{
 function findMineByNameOrEmail_(rows){
   const lname = (currentPersona||'').toLowerCase().trim();
   const lemail = (currentEmail||'').toLowerCase().trim();
+  const lempid = (currentEmpId||'').toLowerCase().trim();
   return rows.find(r=>{
     const rEmail = (r.email||'').toLowerCase().trim();
     const rName = (r.name||'').toLowerCase().trim();
+    const rEmpId = (r.empId||'').toLowerCase().trim(); // inactive until Travel/Hotel sheets get an EmpID column — safe no-op until then
+    if(lempid && rEmpId && rEmpId===lempid) return true;
     if(lemail && rEmail && rEmail===lemail) return true;
     if(lname && rName && rName===lname) return true;
     return false;
@@ -1030,10 +1047,12 @@ function findMineByNameOrEmail_(rows){
 async function renderTravelFromCache(){
   const reg = (await sget(k('registration'))) || {};
   if(!currentEmail) currentEmail = reg.email || currentEmail;
+  if(!currentEmpId) currentEmpId = reg.empId || currentEmpId;
 
   document.getElementById('regSummary').innerHTML = `
     <div class="row"><span style="font-size:12.5px;color:var(--muted)">Name</span><span style="font-size:12.5px">${escapeHtml(reg.name||'—')}</span></div>
     <div class="row"><span style="font-size:12.5px;color:var(--muted)">Email</span><span style="font-size:12.5px">${escapeHtml(reg.email||'—')}</span></div>
+    <div class="row"><span style="font-size:12.5px;color:var(--muted)">Employee ID</span><span style="font-size:12.5px">${escapeHtml(reg.empId||'—')}</span></div>
     <div class="row"><span style="font-size:12.5px;color:var(--muted)">Contact</span><span style="font-size:12.5px">${escapeHtml(reg.contact||'—')}</span></div>
     <div class="row"><span style="font-size:12.5px;color:var(--muted)">Country</span><span style="font-size:12.5px">${escapeHtml(reg.country||'—')}</span></div>
     <div class="row"><span style="font-size:12.5px;color:var(--muted)">Dietary</span><span style="font-size:12.5px">${escapeHtml(reg.dietary||'—')}</span></div>`;
@@ -1427,9 +1446,12 @@ async function renderTransportDashboard(){
     const buses = await apiGet('busSummary');
     const list = document.getElementById('busSummaryList');
     list.innerHTML = buses.length ? buses.map(b => `
-      <div class="row" style="cursor:pointer;" onclick="openBusParticipants('${encodeURIComponent(b.bus)}')">
-        <span style="font-size:13px;">Bus ${escapeHtml(b.bus)}</span>
-        <span class="tag ${b.boarded===b.total ? 'ok':'warn'}">${b.boarded} / ${b.total}</span>
+      <div class="row">
+        <span style="font-size:13px; cursor:pointer;" onclick="openBusParticipants('${encodeURIComponent(b.bus)}')">Bus ${escapeHtml(b.bus)}</span>
+        <span style="display:flex; align-items:center; gap:8px;">
+          <span class="tag ${b.boarded===b.total ? 'ok':'warn'}">${b.boarded} / ${b.total}</span>
+          <button class="btn small secondary" onclick="event.stopPropagation(); resetBusBoarding('${encodeURIComponent(b.bus)}')">Reset</button>
+        </span>
       </div>`).join('') : '<div class="empty">No buses allocated yet.</div>';
   }catch(e){
     document.getElementById('busSummaryList').innerHTML = '<div class="error-msg">Could not load bus summary.</div>';
@@ -1459,7 +1481,8 @@ async function openBusParticipants(encodedBus){
 async function resetAirportBoarding(){
   if(!confirm('Reset airport boarding status for ALL participants? This cannot be undone.')) return;
   try{
-    await apiPost({ action:'resetAirportBoarding' });
+    const res = await apiPost({ action:'resetAirportBoarding', adminSecret: ADMIN_PIN });
+    if(res && res.error){ toast('Reset failed: ' + res.error); return; }
     toast('Airport boarding reset');
     renderTransportDashboard();
   }catch(e){
@@ -1467,11 +1490,16 @@ async function resetAirportBoarding(){
   }
 }
 
-async function resetCoorgBoarding(){
-  if(!confirm('Reset Coorg boarding status for ALL participants? This cannot be undone.')) return;
+// Replaces the old resetCoorgBoarding() — resets ONE bus at a time so
+// clearing a mistake on one bus never touches other buses' already-confirmed
+// boarding. Called from each bus row's own "Reset" button.
+async function resetBusBoarding(encodedBus){
+  const bus = decodeURIComponent(encodedBus);
+  if(!confirm(`Reset boarding status for Bus ${bus} only? Other buses are unaffected. This cannot be undone.`)) return;
   try{
-    await apiPost({ action:'resetCoorgBoarding' });
-    toast('Coorg boarding reset');
+    const res = await apiPost({ action:'resetCoorgBoardingForBus', bus, adminSecret: ADMIN_PIN });
+    if(res && res.error){ toast('Reset failed: ' + res.error); return; }
+    toast(`Bus ${bus} boarding reset (${res.reset || 0} attendee(s))`);
     renderTransportDashboard();
   }catch(e){
     toast('Reset failed — check your connection');
@@ -1491,7 +1519,7 @@ function renderParticipantDirectory(){
     (p.name||'').toLowerCase().includes(q) || (p.email||'').toLowerCase().includes(q)
   );
   container.innerHTML = list.length ? list.map(p => `
-    <div class="participant-card" onclick="openParticipantDetail('${encodeURIComponent(p.name)}')">
+    <div class="participant-card" onclick="openParticipantDetail('${encodeURIComponent(p.name)}','${encodeURIComponent(p.empId||'')}')">
       <div class="pname">${escapeHtml(p.name)}</div>
       <div class="pmeta">${escapeHtml(p.email||'—')} · ${escapeHtml(p.contact||'—')}</div>
       <div class="ptags">
@@ -1513,6 +1541,7 @@ function openAllParticipantsTable(){
         <thead>
           <tr style="text-align:left; color:var(--muted); border-bottom:1px solid var(--border);">
             <th style="padding:6px 8px;">Name</th>
+            <th style="padding:6px 8px;">Emp ID</th>
             <th style="padding:6px 8px;">Email</th>
             <th style="padding:6px 8px;">Contact</th>
             <th style="padding:6px 8px;">Room</th>
@@ -1524,26 +1553,28 @@ function openAllParticipantsTable(){
           ${list.length ? list.map(p => `
             <tr style="border-bottom:1px solid var(--border);">
               <td style="padding:6px 8px;">${escapeHtml(p.name)}</td>
+              <td style="padding:6px 8px;">${escapeHtml(p.empId||'—')}</td>
               <td style="padding:6px 8px;">${escapeHtml(p.email||'—')}</td>
               <td style="padding:6px 8px;">${escapeHtml(p.contact||'—')}</td>
               <td style="padding:6px 8px;">${escapeHtml(p.roomNo||'—')}</td>
               <td style="padding:6px 8px;">${escapeHtml(p.busNo||'—')}</td>
               <td style="padding:6px 8px;">${p.airportPickup==='Y'?'Yes':'No'}</td>
-            </tr>`).join('') : `<tr><td style="padding:8px;" colspan="6">No participants registered yet.</td></tr>`}
+            </tr>`).join('') : `<tr><td style="padding:8px;" colspan="7">No participants registered yet.</td></tr>`}
         </tbody>
       </table>
     </div>`;
   overlay.classList.add('show');
 }
 
-async function openParticipantDetail(encodedName){
+async function openParticipantDetail(encodedName, encodedEmpId){
   const name = decodeURIComponent(encodedName);
+  const empId = encodedEmpId ? decodeURIComponent(encodedEmpId) : '';
   const overlay = document.getElementById('detailOverlay');
   const content = document.getElementById('detailContent');
   content.innerHTML = '<div class="loading">Loading…</div>';
   overlay.classList.add('show');
   try{
-    const detail = await apiGet('participantDetail', {name});
+    const detail = await apiGet('participantDetail', {name, empId});
     const reg = detail.registration || {};
     const travel = detail.travel || {};
     const hotel = detail.hotel || {};
@@ -1551,6 +1582,7 @@ async function openParticipantDetail(encodedName){
       <h2>${escapeHtml(name)}</h2>
       <div class="card"><h3>Registration</h3>
         <div class="row"><span style="color:var(--muted);font-size:12.5px">Email</span><span style="font-size:12.5px">${escapeHtml(reg.email||'—')}</span></div>
+        <div class="row"><span style="color:var(--muted);font-size:12.5px">Employee ID</span><span style="font-size:12.5px">${escapeHtml(reg.empId||'—')}</span></div>
         <div class="row"><span style="color:var(--muted);font-size:12.5px">Contact</span><span style="font-size:12.5px">${escapeHtml(reg.contact||'—')}</span></div>
         <div class="row"><span style="color:var(--muted);font-size:12.5px">Dietary</span><span style="font-size:12.5px">${escapeHtml(reg.dietary||'—')}</span></div>
       </div>
@@ -1645,7 +1677,8 @@ async function confirmResolve(){
 
 async function doResolveToggle(idx, resolutionNotes){
   try{
-    await apiPost({ action:'resolveHelpRequest', idx, resolvedBy: currentPersona || 'Organizer', resolutionNotes });
+    const res = await apiPost({ action:'resolveHelpRequest', idx, resolvedBy: currentPersona || 'Organizer', resolutionNotes, adminSecret: ADMIN_PIN });
+    if(res && res.error){ toast('Could not update: ' + res.error); return; }
     await loadCache();
     renderAdmin();
   }catch(e){

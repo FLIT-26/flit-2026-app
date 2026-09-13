@@ -395,11 +395,16 @@
       <div class="card">
         <h3>Participant directory</h3>
         <input class="search-box" id="participantSearch" placeholder="Search by name or email…" oninput="renderParticipantDirectory()">
+        <button class="btn secondary block" style="margin-bottom:10px;" onclick="openAllParticipantsTable()">View All Participants</button>
         <div id="admDirectory"><div class="loading">Loading…</div></div>
       </div>
 
       <div class="card">
         <h3>Help &amp; SOS requests</h3>
+        <div class="subnav" id="helpAdminSubnav">
+          <button data-hv="recent" class="active">Recent</button>
+          <button data-hv="open">Open Only</button>
+        </div>
         <div id="admHelpList"><div class="empty">No requests yet.</div></div>
       </div>
 
@@ -1398,11 +1403,8 @@ async function renderAdmin(){
   renderTransportDashboard();
 
   const helpAll = (await sget('helprequests')) || [];
-  document.getElementById('admHelpList').innerHTML = helpAll.length ? helpAll.slice().reverse().map((h,idx)=>{
-    const realIdx = helpAll.length-1-idx;
-    return `<div class="row"><span style="font-size:12.5px">${h.sos?'🆘 ':''}${escapeHtml(h.persona)} — ${escapeHtml(h.message)} <span class="tag">${escapeHtml(h.type)}</span></span>
-      <button class="btn small secondary" onclick="resolveHelp(${realIdx})">${h.resolved?'Reopen':'Resolve'}</button></div>`;
-  }).join('') : '<div class="empty">No requests yet.</div>';
+  _helpAllCache = helpAll; // so the Recent/Open Only toggle can re-render without another round trip
+  renderHelpAdminList(helpAll);
 
   const wall = (await sget('memorywall')) || [];
   document.getElementById('admWallList').innerHTML = wall.length ? wall.slice().reverse().map((w,idx)=>{
@@ -1478,10 +1480,17 @@ async function resetCoorgBoarding(){
 
 function renderParticipantDirectory(){
   const q = (document.getElementById('participantSearch').value || '').toLowerCase().trim();
+  const container = document.getElementById('admDirectory');
+
+  if(!q){
+    container.innerHTML = '<div class="empty">Type a name or email above to search, or tap "View All Participants".</div>';
+    return;
+  }
+
   const list = (window.appCache.participants || []).filter(p =>
-    !q || (p.name||'').toLowerCase().includes(q) || (p.email||'').toLowerCase().includes(q)
+    (p.name||'').toLowerCase().includes(q) || (p.email||'').toLowerCase().includes(q)
   );
-  document.getElementById('admDirectory').innerHTML = list.length ? list.map(p => `
+  container.innerHTML = list.length ? list.map(p => `
     <div class="participant-card" onclick="openParticipantDetail('${encodeURIComponent(p.name)}')">
       <div class="pname">${escapeHtml(p.name)}</div>
       <div class="pmeta">${escapeHtml(p.email||'—')} · ${escapeHtml(p.contact||'—')}</div>
@@ -1491,6 +1500,40 @@ function renderParticipantDirectory(){
         <span class="tag ${p.airportPickup==='Y'?'ok':''}">${p.airportPickup==='Y' ? 'Pickup: Yes' : 'Pickup: No'}</span>
       </div>
     </div>`).join('') : '<div class="empty">No participants found.</div>';
+}
+
+function openAllParticipantsTable(){
+  const list = window.appCache.participants || [];
+  const overlay = document.getElementById('detailOverlay');
+  const content = document.getElementById('detailContent');
+  content.innerHTML = `
+    <h2>All Participants (${list.length})</h2>
+    <div class="card" style="overflow-x:auto; padding:8px;">
+      <table style="width:100%; border-collapse:collapse; font-size:12px; white-space:nowrap;">
+        <thead>
+          <tr style="text-align:left; color:var(--muted); border-bottom:1px solid var(--border);">
+            <th style="padding:6px 8px;">Name</th>
+            <th style="padding:6px 8px;">Email</th>
+            <th style="padding:6px 8px;">Contact</th>
+            <th style="padding:6px 8px;">Room</th>
+            <th style="padding:6px 8px;">Bus</th>
+            <th style="padding:6px 8px;">Pickup</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.length ? list.map(p => `
+            <tr style="border-bottom:1px solid var(--border);">
+              <td style="padding:6px 8px;">${escapeHtml(p.name)}</td>
+              <td style="padding:6px 8px;">${escapeHtml(p.email||'—')}</td>
+              <td style="padding:6px 8px;">${escapeHtml(p.contact||'—')}</td>
+              <td style="padding:6px 8px;">${escapeHtml(p.roomNo||'—')}</td>
+              <td style="padding:6px 8px;">${escapeHtml(p.busNo||'—')}</td>
+              <td style="padding:6px 8px;">${p.airportPickup==='Y'?'Yes':'No'}</td>
+            </tr>`).join('') : `<tr><td style="padding:8px;" colspan="6">No participants registered yet.</td></tr>`}
+        </tbody>
+      </table>
+    </div>`;
+  overlay.classList.add('show');
 }
 
 async function openParticipantDetail(encodedName){
@@ -1536,6 +1579,33 @@ function closeParticipantDetail(){
 }
 
 let _resolvingIdx = null;
+let _helpAllCache = [];
+let helpAdminViewMode = 'recent'; // 'recent' shows the last 5 (any status); 'open' shows all unresolved
+
+function renderHelpAdminList(list){
+  list = list || [];
+  const indexed = list.map((h,i)=>({ h, idx:i }));
+  const toShow = helpAdminViewMode === 'open'
+    ? indexed.filter(x => !x.h.resolved)
+    : indexed.slice(-5).reverse();
+
+  document.getElementById('admHelpList').innerHTML = toShow.length ? toShow.map(({h, idx})=>{
+    return `<div class="row"><span style="font-size:12.5px">${h.sos?'🆘 ':''}${escapeHtml(h.persona)} — ${escapeHtml(h.message)} <span class="tag">${escapeHtml(h.type)}</span></span>
+      <span style="display:flex; align-items:center; gap:6px;">
+        <span class="tag ${h.resolved?'ok':'warn'}">${h.resolved?'Resolved':'Open'}</span>
+        <button class="btn small secondary" onclick="resolveHelp(${idx})">${h.resolved?'Reopen':'Resolve'}</button>
+      </span></div>`;
+  }).join('') : `<div class="empty">${helpAdminViewMode==='open' ? 'No open requests right now.' : 'No requests yet.'}</div>`;
+}
+
+document.getElementById('helpAdminSubnav').addEventListener('click', e=>{
+  const btn = e.target.closest('button'); if(!btn) return;
+  document.querySelectorAll('#helpAdminSubnav button').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  helpAdminViewMode = btn.dataset.hv;
+  renderHelpAdminList(_helpAllCache);
+});
+
 
 // Entry point — unchanged signature, still called from the admin list's
 // "Resolve"/"Reopen" button exactly as before. Resolving now requires
@@ -1614,11 +1684,12 @@ window.addEventListener('appinstalled', ()=>{
   const card = document.getElementById('installAppCard');
   if(card) card.style.display = 'none';
 });
-if('serviceWorker' in navigator){
-  window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('service-worker.js').catch(e=>console.error('SW registration failed', e));
-  });
-}
+// NOTE: no separate navigator.serviceWorker.register('service-worker.js') here anymore.
+// OneSignal.init() below already registers a service worker at this app's scope
+// (OneSignalSDKWorker.js) — that file now ALSO contains the app-shell caching
+// logic that used to live in a second, separate service-worker.js. Two workers
+// both claiming the same scope was the actual cause of notification clicks not
+// opening the installed app.
 
 /* ---------- boot ---------- */
 if(typeof OneSignalDeferred === 'undefined'){ window.OneSignalDeferred = []; }

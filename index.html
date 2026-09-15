@@ -130,6 +130,18 @@
   .detail-sheet{background:var(--panel); border-top-left-radius:20px; border-top-right-radius:20px; max-width:460px; width:100%; max-height:82vh; overflow-y:auto; padding:18px; border:1px solid var(--border); border-bottom:none;}
   .detail-sheet h2{font-family:'Space Grotesk',sans-serif; font-size:18px; margin:0 0 12px;}
   .detail-close{float:right;}
+  .survey-progress{background:var(--panel-2); border:1px solid var(--border); border-radius:10px; padding:12px; margin-bottom:12px;}
+  .survey-progress .progress-item{font-size:12px; color:var(--muted); padding:4px 0;}
+  .survey-progress .progress-item.done{color:var(--lime);}
+  .poll-result-option{border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:8px;}
+  .poll-result-option .pct{font-family:'Space Grotesk',sans-serif; font-weight:700; font-size:14px;}
+  .poll-result-option.your-choice{border-color:#4DA3FF; background:rgba(77,163,255,.10);}
+  .poll-result-option.audience-favorite{border-color:#39FF14; background:rgba(57,255,20,.08);}
+  .poll-result-option.both-choice{border-color:#39FF14; background:linear-gradient(90deg,rgba(77,163,255,.10),rgba(57,255,20,.08));}
+  .poll-control-row{padding:10px 0; border-top:1px solid var(--border);}
+  .toggle-line{display:flex; align-items:center; justify-content:space-between; gap:10px; font-size:12px; color:var(--muted); margin-top:8px;}
+  .toggle-line input{width:auto; margin:0; accent-color:var(--lime);}
+  .survey-readonly textarea,.survey-readonly input{opacity:.75;}
 </style>
 </head>
 <body>
@@ -299,9 +311,11 @@
         <button data-e="ask">Ask Leadership</button>
         <button data-e="wall">Memory Wall</button>
         <button data-e="survey">Survey</button>
+        <button data-e="pollresults" id="pollResultsNavBtn" style="display:none">Poll Results</button>
       </div>
 
       <div id="engage-polls"></div>
+      <div id="engage-pollresults" style="display:none"></div>
 
       <div id="engage-ask" style="display:none">
         <div class="card">
@@ -1217,47 +1231,119 @@ document.getElementById('engageSubnav').addEventListener('click', e=>{
   const btn = e.target.closest('button'); if(!btn) return;
   document.querySelectorAll('#engageSubnav button').forEach(b=>b.classList.remove('active'));
   btn.classList.add('active');
-  ['polls','ask','wall','survey'].forEach(t=>document.getElementById('engage-'+t).style.display = (t===btn.dataset.e)?'block':'none');
+  ['polls','ask','wall','survey','pollresults'].forEach(t=>{
+    const el = document.getElementById('engage-'+t);
+    if(el) el.style.display = (t===btn.dataset.e)?'block':'none';
+  });
   if(btn.dataset.e==='wall') renderWall();
   if(btn.dataset.e==='ask') renderAsk();
+  if(btn.dataset.e==='survey') renderSurvey();
+  if(btn.dataset.e==='pollresults') renderPollResults();
 });
 async function renderEngage(){ await renderPolls(); }
 
-// NEW
+// Polls and results are rendered from the same server-side PollControl + response data.
+async function getPollCenter_(){
+  return await apiGet('pollCenter', {name: currentPersona || '', email: currentEmail || ''});
+}
+
+function renderPollParticipation_(voted){
+  return `<span class="tag ${voted ? 'ok' : 'warn'}">${voted ? '✅ Voted' : '❌ Not Yet Participated'}</span>`;
+}
+
 async function renderPolls(){
-  const votes = (await sget(k('pollvotes'))) || {};
-  const summary = await apiGet('pollSummary').catch(()=>({}));
-  const polls = window.appCache.polls || [];
+  const center = await getPollCenter_().catch(()=>[]);
+  const polls = Array.isArray(center) ? center.filter(p=>p.pollActive) : [];
+  const resultPolls = Array.isArray(center) ? center.filter(p=>p.showResults) : [];
+  const nav = document.getElementById('pollResultsNavBtn');
+  if(nav) nav.style.display = resultPolls.length ? 'inline-block' : 'none';
+
   document.getElementById('engage-polls').innerHTML = polls.length ? polls.map(p=>{
-    const counts = summary[p.id] || {};
-    const total = Object.values(counts).reduce((a,b)=>a+b,0) || 0;
-    const myVote = votes[p.id];
+    const myVote = p.myVote || null;
     const opts = p.options.map(o=>{
-      const c = counts[o]||0;
-      const pct = total ? Math.round(c/total*100) : 0;
+      const isMine = myVote === o;
       const safeOpt = escapeHtml(o).replace(/'/g,"\\'");
-      const isMine = myVote !== undefined && o === myVote;
-      const borderStyle = isMine ? 'border:1px solid var(--lime);' : 'border:1px solid var(--border);';
-      const bgStyle = isMine ? 'background:rgba(201,255,61,.10);' : '';
-      return `<div class="poll-opt-row" style="${borderStyle} ${bgStyle} border-radius:10px; padding:10px 12px; margin-bottom:8px; cursor:pointer;" onclick="vote('${p.id}','${safeOpt}')">
+      return `<div class="poll-opt-row" style="${isMine ? 'border:1px solid #4DA3FF;background:rgba(77,163,255,.10);' : 'border:1px solid var(--border);'} border-radius:10px; padding:10px 12px; margin-bottom:8px; cursor:${myVote ? 'default' : 'pointer'};" ${myVote ? '' : `onclick="vote('${escapeHtml(p.id)}','${safeOpt}')"`}>
         <div style="display:flex; justify-content:space-between; align-items:center; font-size:13px;">
-          <span>${isMine ? '<span class="tag ok" style="margin-right:6px;">Your Vote</span>' : ''}${escapeHtml(o)}</span>
-          <span>${myVote!==undefined?pct+'%':''}</span>
+          <span>${isMine ? '<span class="tag" style="margin-right:6px;border-color:#4DA3FF;color:#4DA3FF;">🟦 Your Choice</span>' : ''}${escapeHtml(o)}</span>
         </div>
       </div>`;
     }).join('');
-    return `<div class="card"><h3>${escapeHtml(p.question)}</h3>${opts}</div>`;
+    return `<div class="card">
+      <div class="row"><h3 style="margin:0;">${escapeHtml(p.question)}</h3>${renderPollParticipation_(!!myVote)}</div>
+      <div style="margin-top:10px;">${opts}</div>
+    </div>`;
   }).join('') : '<div class="empty">No polls available right now.</div>';
+
+  const resultsSection = document.getElementById('engage-pollresults');
+  if(resultsSection) resultsSection.style.display = resultPolls.length ? 'block' : 'none';
+  if(resultPolls.length) await renderPollResults(center);
 }
-  
+
+function renderPollResultOption_(poll, item){
+  const topVotes = poll.optionsWithResults.length
+    ? Math.max.apply(null, poll.optionsWithResults.map(o=>Number(o.votes || 0)))
+    : 0;
+  const isMajority = topVotes > 0 && Number(item.votes || 0) === topVotes;
+  const isMine = poll.myVote && item.option === poll.myVote;
+
+  let cls = 'poll-result-option';
+  if(isMine && isMajority) cls += ' both-choice';
+  else if(isMine) cls += ' your-choice';
+  else if(isMajority) cls += ' audience-favorite';
+
+  let label = '';
+  if(isMine && isMajority) label = '<span class="tag" style="border-color:#39FF14;color:#39FF14;">🟩🟦 Your Choice &amp; Audience Favorite</span>';
+  else if(isMajority) label = '<span class="tag" style="border-color:#39FF14;color:#39FF14;">🟩 Audience Favorite</span>';
+  else if(isMine) label = '<span class="tag" style="border-color:#4DA3FF;color:#4DA3FF;">🟦 Your Choice</span>';
+
+  return `<div class="${cls}">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+      <span style="font-size:13px;">${escapeHtml(item.option)}</span>
+      <span class="pct">${item.percentage}%</span>
+    </div>
+    <div style="margin-top:5px;">${label}</div>
+  </div>`;
+}
+
+async function renderPollResults(centerData){
+  const center = centerData || await getPollCenter_().catch(()=>[]);
+  const resultPolls = Array.isArray(center) ? center.filter(p=>p.showResults) : [];
+  const box = document.getElementById('engage-pollresults');
+  const nav = document.getElementById('pollResultsNavBtn');
+
+  if(!resultPolls.length){
+    if(box) { box.innerHTML = ''; box.style.display = 'none'; }
+    if(nav) nav.style.display = 'none';
+    return;
+  }
+
+  if(nav) nav.style.display = 'inline-block';
+  box.style.display = 'block';
+  box.innerHTML = `<div class="card">
+    <h3>Poll Results</h3>
+    <p class="page-sub" style="margin-bottom:0;">Live results are shown for polls enabled by the organizers.</p>
+  </div>` + resultPolls.map(p=>{
+    return `<div class="card">
+      <div class="row">
+        <h3 style="margin:0;">${escapeHtml(p.question)}</h3>
+        ${renderPollParticipation_(!!p.myVote)}
+      </div>
+      <p style="margin:8px 0 10px;color:var(--muted);font-size:12px;">Total votes: ${p.totalVotes}</p>
+      ${p.optionsWithResults.map(o=>renderPollResultOption_(p,o)).join('')}
+    </div>`;
+  }).join('');
+}
+
 async function vote(pollId, option){
-  const votes = (await sget(k('pollvotes'))) || {};
-  if(votes[pollId] !== undefined) { toast('You already voted'); return; }
+  const center = await getPollCenter_().catch(()=>[]);
+  const poll = Array.isArray(center) ? center.find(p=>p.id===pollId) : null;
+  if(!poll || !poll.pollActive){ toast('This poll is not active'); return; }
+  if(poll.myVote){ toast('You already voted'); return; }
   try{
-    await apiPost({ action:'submitPollResponse', name: currentPersona, email: currentEmail || '', pollId, response: option });
-    votes[pollId] = option;
-    await sset(k('pollvotes'), votes);
-    renderPolls();
+    const res = await apiPost({ action:'submitPollResponse', name: currentPersona, email: currentEmail || '', pollId, response: option });
+    if(res && res.error){ toast(res.error); return; }
+    await renderPolls();
     toast('Vote recorded');
   }catch(e){
     toast('Could not record vote — check your connection');
@@ -1268,10 +1354,13 @@ async function pollLiveRefresh(){
   const active = document.querySelector('.screen.active');
   if(!active || active.id !== 'screen-engage') return;
   const activeSub = document.querySelector('#engageSubnav button.active');
-  if(!activeSub || activeSub.dataset.e !== 'polls') return;
-  try{ await renderPolls(); }catch(e){ /* silent — background poll refresh */ }
+  if(!activeSub || !['polls','pollresults'].includes(activeSub.dataset.e)) return;
+  try{
+    const center = await getPollCenter_();
+    await renderPolls();
+    if(activeSub.dataset.e==='pollresults') await renderPollResults(center);
+  }catch(e){ /* silent — background poll refresh */ }
 }
-  
 function populateAskSessionDropdown_(){
   const sel = document.getElementById('askSession');
   if(!sel) return;
@@ -1321,15 +1410,139 @@ async function postWall(){
   toast('Posted to wall');
 }
 
+function surveyFieldIds_(){
+  return [
+    'surveyDay1Rating','surveyDay1Good','surveyDay1Improve',
+    'surveyDay2Rating','surveyDay2Good','surveyDay2Improve',
+    'surveyDay3Rating','surveyDay3Good','surveyDay3Improve',
+    'surveyOverallRating','surveyOverallGood','surveyOverallImprove'
+  ];
+}
+
+function setSurveyFieldsDisabled_(disabled){
+  surveyFieldIds_().forEach(id=>{
+    const el = document.getElementById(id);
+    if(el) el.disabled = disabled;
+  });
+  const submitBtn = document.getElementById('surveySubmitBtn');
+  if(submitBtn) submitBtn.disabled = disabled;
+}
+
+function updateSurveyProgress(){
+  const groups = [
+    ['surveyDay1Rating','surveyProgressDay1','Day 1'],
+    ['surveyDay2Rating','surveyProgressDay2','Day 2'],
+    ['surveyDay3Rating','surveyProgressDay3','Day 3'],
+    ['surveyOverallRating','surveyProgressOverall','Overall Conference']
+  ];
+  groups.forEach(([inputId, progressId, label])=>{
+    const value = document.getElementById(inputId)?.value;
+    const done = /^[1-5]$/.test(String(value || '').trim());
+    const el = document.getElementById(progressId);
+    if(!el) return;
+    el.textContent = `${done ? '✅' : '⬜'} ${label}`;
+    el.classList.toggle('done', done);
+  });
+}
+
+function fillSurveyResponse_(r){
+  if(!r) return;
+  const values = {
+    surveyDay1Rating:r.day1Rating, surveyDay1Good:r.day1Good, surveyDay1Improve:r.day1Improve,
+    surveyDay2Rating:r.day2Rating, surveyDay2Good:r.day2Good, surveyDay2Improve:r.day2Improve,
+    surveyDay3Rating:r.day3Rating, surveyDay3Good:r.day3Good, surveyDay3Improve:r.day3Improve,
+    surveyOverallRating:r.overallRating, surveyOverallGood:r.overallGood, surveyOverallImprove:r.overallImprove
+  };
+  Object.keys(values).forEach(id=>{
+    const el=document.getElementById(id);
+    if(el) el.value = values[id] ?? '';
+  });
+}
+
+async function renderSurvey(){
+  const unavailable = document.getElementById('surveyUnavailable');
+  const content = document.getElementById('surveyContent');
+  if(!unavailable || !content) return;
+
+  unavailable.style.display='none';
+  content.style.display='none';
+
+  const state = await apiGet('surveyState', {name:currentPersona || '', email:currentEmail || ''}).catch(()=>({surveyEnabled:true,response:null}));
+  if(!state.surveyEnabled){
+    unavailable.style.display='block';
+    return;
+  }
+
+  content.style.display='block';
+  if(state.response){
+    fillSurveyResponse_(state.response);
+    updateSurveyProgress();
+    setSurveyFieldsDisabled_(true);
+    document.getElementById('surveySubmitCard').style.display='none';
+    document.getElementById('surveySubmittedCard').style.display='block';
+    document.getElementById('surveyDone').textContent='✅ Thank you. Your feedback has been submitted.';
+  }else{
+    setSurveyFieldsDisabled_(false);
+    document.getElementById('surveySubmitCard').style.display='block';
+    document.getElementById('surveySubmittedCard').style.display='none';
+    document.getElementById('surveyDone').textContent='';
+    updateSurveyProgress();
+  }
+}
+
 async function submitSurvey(){
-  const rating = document.getElementById('surveyRating').value;
-  const good = document.getElementById('surveyGood').value;
-  const improve = document.getElementById('surveyImprove').value;
+  const payload = {
+    action:'submitSurvey',
+    name: currentPersona,
+    email: currentEmail || '',
+    day1Rating:document.getElementById('surveyDay1Rating').value.trim(),
+    day1Good:document.getElementById('surveyDay1Good').value.trim(),
+    day1Improve:document.getElementById('surveyDay1Improve').value.trim(),
+    day2Rating:document.getElementById('surveyDay2Rating').value.trim(),
+    day2Good:document.getElementById('surveyDay2Good').value.trim(),
+    day2Improve:document.getElementById('surveyDay2Improve').value.trim(),
+    day3Rating:document.getElementById('surveyDay3Rating').value.trim(),
+    day3Good:document.getElementById('surveyDay3Good').value.trim(),
+    day3Improve:document.getElementById('surveyDay3Improve').value.trim(),
+    overallRating:document.getElementById('surveyOverallRating').value.trim(),
+    overallGood:document.getElementById('surveyOverallGood').value.trim(),
+    overallImprove:document.getElementById('surveyOverallImprove').value.trim()
+  };
+
+  const ratings=[payload.day1Rating,payload.day2Rating,payload.day3Rating,payload.overallRating];
+  if(ratings.some(r=>!/^[1-5]$/.test(r))){
+    toast('Please rate all four sections from 1 to 5');
+    updateSurveyProgress();
+    return;
+  }
+
+  const btn=document.getElementById('surveySubmitBtn');
+  btn.disabled=true;
+  btn.textContent='Submitting…';
   try{
-    await apiPost({ action:'submitSurvey', name: currentPersona, email: currentEmail || '', rating, good, improve });
-    document.getElementById('surveyDone').textContent = 'Thanks — your feedback was recorded.';
+    const res=await apiPost(payload);
+    if(res && res.error){
+      toast(res.error);
+      if(res.error==='Survey already submitted.'){
+        await renderSurvey();
+      }
+      return;
+    }
+    fillSurveyResponse_(res.response || payload);
+    updateSurveyProgress();
+    setSurveyFieldsDisabled_(true);
+    document.getElementById('surveySubmitCard').style.display='none';
+    document.getElementById('surveySubmittedCard').style.display='block';
+    document.getElementById('surveyDone').textContent='✅ Thank you. Your feedback has been submitted.';
     toast('Survey submitted');
-  }catch(e){ toast('Could not submit — check your connection'); }
+  }catch(e){
+    toast('Could not submit — check your connection');
+  }finally{
+    if(document.getElementById('surveySubmitCard').style.display!=='none'){
+      btn.disabled=false;
+      btn.textContent='Submit survey';
+    }
+  }
 }
 
 /* ================= HELP ================= */
@@ -1408,6 +1621,9 @@ async function renderAdmin(){
   document.getElementById('admStatSOS').textContent = summary.openSOS || 0;
   document.getElementById('admStatHelp').textContent = summary.openHelp || 0;
 
+  await renderAdminSurveyControls_();
+  await renderAdminPollManagement_();
+
   const recentReg = summary.recentRegistrations || [];
   document.getElementById('admRecentReg').innerHTML = recentReg.length ? recentReg.map(r=>
     `<div class="row"><span style="font-size:12.5px">${escapeHtml(r.name)}</span><span class="tag">${escapeHtml(r.email||'')}</span></div>`
@@ -1430,6 +1646,102 @@ async function renderAdmin(){
     const realIdx = wall.length-1-idx;
     return `<div class="row"><span style="font-size:12.5px">${w.emoji} ${escapeHtml(w.persona)} — ${escapeHtml(w.caption||'')}</span><button class="btn small secondary" onclick="removeWall(${realIdx})">Remove</button></div>`;
   }).join('') : '<div class="empty">Nothing posted yet.</div>';
+}
+
+async function renderAdminSurveyControls_(){
+  try{
+    const [settings, stats] = await Promise.all([
+      apiGet('surveyState', {name:'', email:''}),
+      apiGet('surveySummary')
+    ]);
+    const enabled = !!settings.surveyEnabled;
+    const toggle = document.getElementById('adminSurveyEnabled');
+    if(toggle) toggle.checked = enabled;
+
+    const s = stats || {};
+    document.getElementById('admSurveyResponses').textContent = s.totalResponses || 0;
+    document.getElementById('admSurveyDay1').textContent = s.averageDay1Rating || 0;
+    document.getElementById('admSurveyDay2').textContent = s.averageDay2Rating || 0;
+    document.getElementById('admSurveyDay3').textContent = s.averageDay3Rating || 0;
+    document.getElementById('admSurveyOverall').textContent = s.averageOverallRating || 0;
+  }catch(e){
+    console.error('renderAdminSurveyControls failed',e);
+  }
+}
+
+async function setSurveyEnabled(enabled){
+  const toggle=document.getElementById('adminSurveyEnabled');
+  const previous=!enabled;
+  if(toggle) toggle.disabled=true;
+  try{
+    const res=await apiPost({
+      action:'setSurveyEnabled',
+      value:enabled?'Y':'N',
+      adminSecret:ADMIN_PIN
+    });
+    if(res && res.error) throw new Error(res.error);
+    toast(enabled ? 'Survey enabled' : 'Survey disabled');
+  }catch(e){
+    if(toggle) toggle.checked=previous;
+    toast('Could not update survey visibility');
+  }finally{
+    if(toggle) toggle.disabled=false;
+  }
+}
+
+async function renderAdminPollManagement_(){
+  const box=document.getElementById('admPollManagement');
+  if(!box) return;
+  try{
+    const polls=await apiGet('pollManagement');
+    if(!Array.isArray(polls) || !polls.length){
+      box.innerHTML='<div class="empty">No polls configured.</div>';
+      return;
+    }
+    box.innerHTML=polls.map(p=>`
+      <div class="poll-control-row">
+        <div style="font-size:13px;font-weight:600;">${escapeHtml(p.question)}</div>
+        <div style="font-size:11px;color:var(--muted);margin-top:3px;">Poll ID: ${escapeHtml(p.id)}</div>
+        <div class="toggle-line">
+          <span>Poll Active</span>
+          <input type="checkbox" ${p.pollActive?'checked':''}
+            onchange="updatePollControl('${escapeHtml(p.id).replace(/'/g,"\\'")}', this, 'active')">
+        </div>
+        <div class="toggle-line">
+          <span>Show Results</span>
+          <input type="checkbox" ${p.showResults?'checked':''}
+            onchange="updatePollControl('${escapeHtml(p.id).replace(/'/g,"\\'")}', this, 'results')">
+        </div>
+      </div>`).join('');
+  }catch(e){
+    box.innerHTML='<div class="error-msg">Could not load poll controls.</div>';
+  }
+}
+
+async function updatePollControl(pollId, changedToggle, type){
+  const row=changedToggle.closest('.poll-control-row');
+  if(!row) return;
+  const toggles=row.querySelectorAll('input[type="checkbox"]');
+  const active=toggles[0].checked;
+  const results=toggles[1].checked;
+  toggles.forEach(t=>t.disabled=true);
+  try{
+    const res=await apiPost({
+      action:'setPollControl',
+      pollId,
+      pollActive:active?'Y':'N',
+      showResults:results?'Y':'N',
+      adminSecret:ADMIN_PIN
+    });
+    if(res && res.error) throw new Error(res.error);
+    toast('Poll settings updated');
+    await loadCache();
+  }catch(e){
+    changedToggle.checked=!changedToggle.checked;
+    toast('Could not update poll settings');
+  }finally{
+    toggles.forEach(t=>t.disabled=false);
+  }
 }
 
 /* ---------------- Transport Operations ---------------- */
@@ -1596,7 +1908,7 @@ async function openParticipantDetail(encodedName, encodedEmpId){
         ${detail.questions && detail.questions.length ? detail.questions.map(q=>`<p>${escapeHtml(q.text)}</p>`).join('') : '<p style="color:var(--muted)">None</p>'}
       </div>
       <div class="card"><h3>Survey</h3>
-        <p>${detail.survey ? `Rating ${escapeHtml(detail.survey.rating||'—')}` : 'Not submitted'}</p>
+        <p>${detail.survey ? `Overall Rating ${escapeHtml(detail.survey.overallRating||'—')}` : 'Not submitted'}</p>
       </div>
       <div class="card"><h3>Help / SOS history</h3>
         ${detail.helpRequests && detail.helpRequests.length ? detail.helpRequests.map(h=>`<div class="row"><span style="font-size:12.5px">${h.sos?'🆘 ':''}${escapeHtml(h.message)}</span><span class="tag ${h.resolved?'ok':'warn'}">${h.resolved?'Resolved':'Open'}</span></div>`).join('') : '<p style="color:var(--muted)">None</p>'}

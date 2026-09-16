@@ -492,6 +492,7 @@
 const API_URL = "https://script.google.com/macros/s/AKfycbxoYUGHq-Jfah81cPg4WyymFNLYsBEEz4P-rVqsQohjTtJ28BA4-Isbd7zWF_TtZnbE/exec";
 const ONESIGNAL_APP_ID = "783b78bc-5f37-42f2-83dc-b330d7224486";
 const ADMIN_PIN = "2026"; // change this before sending the link out
+const REGISTRATION_VERSION = "2026-FINAL-01";
 /* ================================================================ */
 
 let currentPersona = null;   // always the attendee's own identity — never overwritten to "Admin"
@@ -599,6 +600,7 @@ async function backgroundRefresh(){
     if(id==='travel') renderTravelFromCache();
     if(id==='home') renderHome();
     if(id==='admin' && isOrganizer) renderAdmin();
+    if(id==='help') renderHelp();
     if(id==='engage'){                                                    // ADD
       const activeSub = document.querySelector('#engageSubnav button.active');
       if(!activeSub || activeSub.dataset.e === 'polls') renderPolls();    // ADD
@@ -622,6 +624,15 @@ document.querySelectorAll('.tabbar button').forEach(b=>b.addEventListener('click
 
 /* ---------------- identity: registration gate + organizer login ---------------- */
 function boot(){
+  const savedVersion = localStorage.getItem('flit_registration_version');
+
+  if(savedVersion !== REGISTRATION_VERSION){
+    localStorage.removeItem('flit_attendee');
+    localStorage.removeItem('flit_isOrganizer');
+    localStorage.removeItem('flit_organizer_name');
+    localStorage.setItem('flit_registration_version', REGISTRATION_VERSION);
+  }
+
   const savedAttendee = localStorage.getItem('flit_attendee');
   isOrganizer = localStorage.getItem('flit_isOrganizer') === 'true';
   
@@ -736,6 +747,7 @@ async function completeRegistration(){
     await sset('attendees_list', list);
   }
   localStorage.setItem('flit_attendee', JSON.stringify({name:reg.name, email:reg.email, empId:reg.empId}));
+  localStorage.setItem('flit_registration_version', REGISTRATION_VERSION);
   enterApp();
   await loadCache();
   showScreen('home');

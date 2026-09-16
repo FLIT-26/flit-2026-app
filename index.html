@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+  <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
@@ -156,16 +156,23 @@
     <h1 class="page-title">Welcome — let's get you registered</h1>
     <p class="page-sub">This is a one-time step. Your details are saved and can't be edited after — if something's wrong, reach the help desk in the app once you're in.</p>
     <div class="card">
-      <label>Name</label><input id="gName" placeholder="">
-      <label>Email</label><input id="gEmail" placeholder="">
-      <label>Contact number</label><input id="gContact" placeholder="">
+      <label>Name <span style="color:#b91c1c">*</span></label>
+      <input id="gName" placeholder="" required>
+
+      <label>Email <span style="color:#b91c1c">*</span></label>
+      <input id="gEmail" placeholder="" required>
+
+      <label>Contact number <span style="color:#b91c1c">*</span></label>
+      <input id="gContact" placeholder="" required>
+
       <label>Employee ID <span style="color:#b91c1c">*</span></label>
-      <input id="gEmpId" type="text" placeholder="Enter Employee ID without alphabets" autocomplete="off">
-      <div class="hint">Enter your Employee ID without any alphabet prefix (e.g. 12345678, not AB12345678).</div>
-      <label>Country</label><input id="gCountry" placeholder="">
-      <label>Dietary preference</label>
-      <select class="field" id="gDietary">
-        <option>No preference</option><option>Vegetarian</option><option>Vegan</option><option>Non-vegetarian</option>
+      <input id="gEmpId" placeholder="" required>
+
+      <label>Country <span style="color:#b91c1c">*</span></label>
+      <input id="gCountry" placeholder="" required>
+
+      <label>Dietary preference <span style="color:#b91c1c">*</span></label>
+      <select class="field" id="gDietary" required>        <option>No preference</option><option>Vegetarian</option><option>Vegan</option><option>Non-vegetarian</option>
       </select>
       <button class="btn block" onclick="completeRegistration()">Register &amp; continue</button>
       <p id="gateError" style="color:var(--coral); font-size:12px; margin-top:8px;"></p>
@@ -733,9 +740,9 @@ async function completeRegistration(){
     country: document.getElementById('gCountry').value.trim(),
     dietary: document.getElementById('gDietary').value
   };
-  if(!reg.name || !reg.email || !reg.empId){
-    document.getElementById('gateError').textContent = 'Name, email, and Employee ID are required.';
-    return;
+  if(!reg.name || !reg.email || !reg.empId || !reg.contact || !reg.country || !reg.dietary){
+  document.getElementById('gateError').textContent = 'Please complete all registration fields.';
+  return;
   }
   currentPersona = reg.name;
   currentEmail = reg.email;

@@ -159,7 +159,9 @@
       <label>Name</label><input id="gName" placeholder="">
       <label>Email</label><input id="gEmail" placeholder="">
       <label>Contact number</label><input id="gContact" placeholder="">
-      <label>Employee ID</label><input id="gEmpId" placeholder="">
+      <label>Employee ID <span style="color:#b91c1c">*</span></label>
+      <input id="gEmpId" type="text" placeholder="Enter Employee ID without alphabets" autocomplete="off">
+      <div class="hint">Enter your Employee ID without any alphabet prefix (e.g. 12345678, not AB12345678).</div>
       <label>Country</label><input id="gCountry" placeholder="">
       <label>Dietary preference</label>
       <select class="field" id="gDietary">
@@ -726,7 +728,7 @@ async function completeRegistration(){
   const reg = {
     name: document.getElementById('gName').value.trim(),
     email: document.getElementById('gEmail').value.trim(),
-    empId: document.getElementById('gEmpId').value.trim(),
+    empId: document.getElementById('gEmpId').value.trim().replace(/^[A-Za-z]+/, ''),
     contact: document.getElementById('gContact').value.trim(),
     country: document.getElementById('gCountry').value.trim(),
     dietary: document.getElementById('gDietary').value

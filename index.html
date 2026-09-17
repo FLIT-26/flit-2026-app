@@ -413,7 +413,25 @@
         <input id="admNotifText" placeholder="e.g. Bus to Coorg leaves in 15 mins from Gate 2">
         <button class="btn block" onclick="pushNotification()">Send to all attendees</button>
       </div>
+      <div class="card">
+        <h3>Survey Controls</h3>
+        <div class="toggle-line">
+          <span>Survey Enabled</span>
+          <input type="checkbox" id="adminSurveyEnabled" onchange="setSurveyEnabled(this.checked)">
+        </div>
+        <div class="grid2" style="margin-top:12px;">
+          <div class="stat-card"><div class="n" id="admSurveyResponses">0</div><div class="l">Responses</div></div>
+          <div class="stat-card"><div class="n" id="admSurveyDay1">0</div><div class="l">Avg Day 1</div></div>
+          <div class="stat-card"><div class="n" id="admSurveyDay2">0</div><div class="l">Avg Day 2</div></div>
+          <div class="stat-card"><div class="n" id="admSurveyDay3">0</div><div class="l">Avg Day 3</div></div>
+          <div class="stat-card"><div class="n" id="admSurveyOverall">0</div><div class="l">Avg Overall</div></div>
+        </div>
+      </div>
 
+      <div class="card">
+        <h3>Poll Management</h3>
+        <div id="admPollManagement"><div class="loading">Loading…</div></div>
+      </div>
       <div class="card"><h3>Recent registrations</h3><div id="admRecentReg"><div class="empty">Nothing yet.</div></div></div>
       <div class="card"><h3>Notification history</h3><div id="admNotifHistory"><div class="empty">Nothing sent yet.</div></div></div>
 
@@ -740,6 +758,7 @@ async function completeRegistration(){
     contact: document.getElementById('gContact').value.trim(),
     country: document.getElementById('gCountry').value.trim(),
     dietary: document.getElementById('gDietary').value
+    registeredAt: new Date().toISOString()
   };
   if(!reg.name || !reg.email || !reg.empId || !reg.contact || !reg.country || !reg.dietary){
   document.getElementById('gateError').textContent = 'Please complete all registration fields.';

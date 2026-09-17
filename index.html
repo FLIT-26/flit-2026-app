@@ -749,13 +749,6 @@ async function completeRegistration(){
   currentEmail = reg.email;
   currentEmpId = reg.empId;
   await sset(k('registration'), reg);
-  const list = (await sget('attendees_list')) || [];
-  // Dedupe by Employee ID now, not name — two attendees can share a name, never an Emp ID.
-  const alreadyIn = list.some(e => (typeof e === 'string' ? false : e.empId) === reg.empId);
-  if(!alreadyIn){
-    list.push({ name: reg.name, email: reg.email, empId: reg.empId, registeredAt: new Date().toISOString() });
-    await sset('attendees_list', list);
-  }
   localStorage.setItem('flit_attendee', JSON.stringify({name:reg.name, email:reg.email, empId:reg.empId}));
   localStorage.setItem('flit_registration_version', REGISTRATION_VERSION);
   enterApp();

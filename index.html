@@ -757,7 +757,7 @@ async function completeRegistration(){
     empId: document.getElementById('gEmpId').value.trim().replace(/^[A-Za-z]+/, ''),
     contact: document.getElementById('gContact').value.trim(),
     country: document.getElementById('gCountry').value.trim(),
-    dietary: document.getElementById('gDietary').value
+    dietary: document.getElementById('gDietary').value,
     registeredAt: new Date().toISOString()
   };
   if(!reg.name || !reg.email || !reg.empId || !reg.contact || !reg.country || !reg.dietary){
